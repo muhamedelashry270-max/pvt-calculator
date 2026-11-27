@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>PVT calculator</title>
+<style>
+:root{--bg:#edf0ea;--panel:#f8faf6;--ink:#1b2a28;--mute:#5a6b68;--line:#cdd7d0;--oil:#b4570a;--gas:#0e6e8c;--deep:#17433d}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.45 system-ui,"Segoe UI",sans-serif}
+h1,h2{font-family:Charter,"Iowan Old Style",Georgia,serif;font-weight:600;margin:0}
+header{padding:22px 28px 14px;border-bottom:1px solid var(--line)}
+h1{font-size:28px}header p{margin:4px 0 0;color:var(--mute);max-width:70ch}
+.wrap{display:grid;grid-template-columns:290px 1fr;gap:24px;padding:22px 28px;align-items:start}
+aside{position:sticky;top:14px;background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:14px 16px}
+fieldset{border:0;border-top:1px solid var(--line);margin:0;padding:10px 0 4px}
+fieldset:first-of-type{border-top:0;padding-top:0}
+legend{font:600 14px Charter,Georgia,serif;padding:0 6px 0 0;color:var(--deep)}
+label{display:grid;grid-template-columns:1fr 92px;align-items:center;gap:8px;margin:0 0 8px;font-size:14px}
+label small{color:var(--mute);margin-left:4px}
+input{width:100%;font:inherit;padding:5px 7px;border:1px solid #aebbb4;border-radius:4px;background:#fff;color:var(--ink);text-align:right;font-variant-numeric:tabular-nums}
+input:focus-visible,button:focus-visible{outline:2px solid var(--gas);outline-offset:1px}
+input.bad{border-color:#b3261e;background:#fdeceb}
+button{font:inherit;padding:6px 12px;border:1px solid var(--deep);background:var(--deep);color:#fff;border-radius:4px;cursor:pointer}
+button.alt{background:transparent;color:var(--deep)}
+.btns{display:flex;gap:8px;margin-top:8px}
+main{min-width:0}
+#sum{display:flex;flex-wrap:wrap;gap:6px 30px;background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:14px 18px;margin-bottom:10px}
+#sum div{display:flex;flex-direction:column}
+#sum span{color:var(--mute);font-size:13px}
+#sum b{font:600 19px Charter,Georgia,serif;font-variant-numeric:tabular-nums}
+#sum .pb b{font-size:28px;color:var(--oil)}
+#msg p{margin:0 0 8px;padding:8px 12px;border-left:4px solid #b3261e;background:#fdeceb;border-radius:3px}
+#msg p.w{border-color:#b7791f;background:#fbf1dc}
+h2{font-size:20px;margin:22px 0 10px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:14px}
+.grid svg{width:100%;height:auto;background:var(--panel);border:1px solid var(--line);border-radius:6px;display:block}
+svg text{font:11px system-ui,sans-serif;fill:var(--mute)}
+svg .t{font:600 13px system-ui,sans-serif;fill:var(--ink)}
+svg .r{text-anchor:end;fill:var(--ink);font-variant-numeric:tabular-nums}
+svg .g{stroke:#dfe6e1;stroke-width:1}
+.tw{overflow:auto;max-height:560px;border:1px solid var(--line);border-radius:6px;background:var(--panel)}
+table{border-collapse:collapse;width:100%;font-variant-numeric:tabular-nums;font-size:13.5px}
+th,td{padding:5px 10px;text-align:right;white-space:nowrap}
+th{position:sticky;top:0;background:#e3eae4;font-weight:600;line-height:1.2;border-bottom:1px solid var(--line)}
+th small{display:block;font-weight:400;color:var(--mute)}
+tbody tr:nth-child(even){background:#f0f4ef}
+tr.pb td{background:#f7e3cf;font-weight:600}
+.note{color:var(--mute);font-size:13px;margin-top:8px;max-width:80ch}
+@media(max-width:900px){.wrap{grid-template-columns:1fr;padding:16px}aside{position:static}}
+</style>
+</head>
+<body>
+<header>
+<h1>PVT calculator</h1>
+<p>Oil and gas properties against pressure, using the correlations from PVT-calculator.xlsx. Change an input and every chart and table updates.</p>
+</header>
+<div class="wrap">
+<aside>
+<div id="form"></div>
+<div class="btns"><button id="reset" class="alt" type="button">Reset to workbook values</button></div>
+</aside>
+<main>
+<div id="msg"></div>
+<div id="sum"></div>
+<h2>Oil properties</h2><div class="grid" id="oil"></div>
+<h2>Gas properties</h2><div class="grid" id="gas"></div>
+<h2>Results table</h2>
+<div class="btns" style="margin:0 0 8px"><button id="csv" type="button">Download CSV</button></div>
+<div class="tw"><table id="tbl"></table></div>
+<p class="note">Pressure points follow the workbook grid: 16 steps from reservoir pressure down to the bubble point, then 22 steps down to 15 psi. The highlighted row is the bubble point.</p>
+</main>
+</div>
+<script>
+/*ENGINE*/
+const SC=0.02831684639,BB=0.158987304,LB=62.36509524,KG=998.9926968,RGSC=1.01093023383825;
+const CF=[-2.462,2.97,-.2862,.008054,2.808,-3.498,.3603,-.01044,-.7933,1.396,-.1491,.00441,.08393,-.1864,.02033,-.0006095];
+function calc(i){
+const {Pres,Tres,API,gg,Rsi,CO2,N2,H2S,WC}=i,l=Math.log10,p=Math.pow,sq=Math.sqrt;
+const TC=(Tres-32)*5/9,rhoO=141.5/(131.5+API)*KG,rsi=SC/BB*Rsi;
+const PB=125*(p(582*rsi/gg,.83)*p(10,.00164*TC-1768/rhoO)-1.4)/14.5*2.1045604254721;
+const n=N2/100,c=CO2/100,h=H2S/1e6,gh=(gg-.9672*n-1.5195*c-1.1762*h)/(1-n-c-h);
+const tch=187+330*gh-71.5*gh*gh,pch=706+51.7*gh-11.1*gh*gh,q=1-n-h-c;
+const Tc=q*tch+227.3*n+547.6*c+672.4*h,Pc=q*pch+493*n+1071*c+1306*h;
+const cwa=120*(p(c+h,.9)-p(c+h,1.6))+15*(p(h,.5)-p(h,4));
+const Tcs=Tc-cwa,Pcs=Pc*Tcs/(Tc+h*(1-h)*cwa);
+const Pm=Math.min(PB,Pres),Ps=[];
+for(let k=0;k<=16;k++)Ps.push(Pres-k*(Pres-Pm)/16);
+for(let k=1;k<22;k++)Ps.push(Pm-k*(Pm-15)/22);
+Ps.push(15);
+const Yw=WC/100,rhow=1.05*LB,TR=Tres+460,Tpr=TR/Tcs;
+const bo=r=>.9759+12e-5*p(177*r*SC/BB*sq(gg/rhoO)+2.25*TC+40,1.2);
+const rhoBp=(rhoO+SC/BB*Rsi*RGSC)/bo(Rsi);
+const a1=10.313*l(Tres)-36.447,mud=3.141e10*p(Tres,-3.444)*p(l(API),a1);
+const mg0=(1.709e-5-2.062e-6*gg)*Tres+8.188e-3-6.15e-3*l(gg);
+const rows=Ps.map(P=>{
+const C=P/Pcs,e=j=>CF[j]+CF[j+1]*C+CF[j+2]*C*C+CF[j+3]*C**3;
+const E=e(0)+Tpr*e(4)+Tpr*Tpr*e(8)+Tpr**3*e(12);
+const mug=mg0/Tpr*Math.exp(E);
+const K=1.39*sq(Tpr-.92)-.36*Tpr-.101,L=(.62-.23*Tpr)*C+(.066/(Tpr-.86)-.037)*C*C+.32/p(10,9*(Tpr-1))*p(C,6);
+const M=.132-.32*l(Tpr),N=p(10,.3106-.49*Tpr+.1824*Tpr*Tpr);
+const Z=K+(1-K)/Math.exp(L)+M*p(C,N);
+const rg=28.97*gg*P/Z/10.73/TR,Bg=.0283*Z*TR/(P+14.5);
+const Rs=P>=PB?Rsi:(gg/582)*p((8e-6*(P/.000145037738)+1.4)*p(10,1768/rhoO-.00164*TC),1/.83)/SC*BB;
+const Bo=P>=PB?Math.exp(3e-6*(PB-P))*bo(Rs):bo(Rs);
+const ro=P<=PB?((rhoO+SC/BB*Rs*RGSC)/Bo)*LB/KG:rhoBp*Math.exp(3e-6*(P-PB))*LB/KG;
+const a2=10.715*p(Rs+100,-.515),b=5.44*p(Rs+150,-.338),m=2.6*p(P,1.187)*p(10,-3.9e-5*P-5);
+const muo=P>PB?a2*p(mud,b)*p(P/PB,m):a2*p(mud,b);
+return{P,Z,Bg,Bgb:Bg/5.615,rg,mug,Rs,Bo,ro,rL:ro+Yw*(rhow-ro),muo};});
+return{PB,Tcs,Pcs,gh,ok:gh>=.56&&gh<=1.3,rows,PBi:16};}
+/*END*/
+const FLD=[["Pres","Reservoir pressure","psi",4200,0],["Tres","Reservoir temperature","°F",250,0],["API","Oil gravity","°API",32,1],["Rsi","Initial GOR, Rsi","scf/STB",412,1],["gg","Gas gravity (air = 1)","",.85,2],["CO2","CO₂","%",2,2],["N2","N₂","%",1,2],["H2S","H₂S","ppm",8,2],["WC","Water cut","%",0,3]];
+const GRP=["Reservoir","Oil","Gas","Water"];
+const OIL=[["Rs","Solution gas–oil ratio, Rs","scf/STB"],["Bo","Oil formation volume factor, Bo","bbl/STB"],["ro","Oil density","lbm/ft³"],["muo","Oil viscosity","cP"]];
+const GAS=[["Z","Gas z-factor",""],["Bg","Gas formation volume factor, Bg","SCF/scf"],["rg","Gas density","lbm/ft³"],["mug","Gas viscosity","cP"]];
+const COL=[["P","Pressure","psi"],["Z","z-factor",""],["Bg","Bg","SCF/scf"],["Bgb","Bg","bbl/scf"],["rg","Gas density","lbm/ft³"],["mug","Gas visc.","cP"],["Rs","Rs","scf/STB"],["Bo","Bo","bbl/STB"],["ro","Oil density","lbm/ft³"],["rL","Liquid density","lbm/ft³"],["muo","Oil visc.","cP"]];
+const $=id=>document.getElementById(id),fmt=v=>v.toLocaleString("en-US",{maximumSignificantDigits:4});
+let form="";
+FLD.forEach((f,i)=>{if(i==0||FLD[i-1][4]!=f[4])form+=(i?"</fieldset>":"")+"<fieldset><legend>"+GRP[f[4]]+"</legend>";
+form+='<label>'+f[1]+(f[2]?"<small>"+f[2]+"</small>":"")+'<input type="number" step="any" id="'+f[0]+'" value="'+f[3]+'"></label>';});
+$("form").innerHTML=form+"</fieldset>";
+const CH={};
+function ticks(lo,hi){if(hi-lo<1e-12*Math.abs(hi||1)){const d=Math.abs(hi)*.1||1;lo-=d;hi+=d}
+let s=(hi-lo)/5,e=Math.floor(Math.log10(s)),b=s/10**e,m=b<1.5?1:b<3?2:b<7?5:10;s=m*10**e;
+let v=Math.floor(lo/s+1e-9)*s;const o=[+v.toPrecision(12)];while(v<hi-1e-9*s){v+=s;o.push(+v.toPrecision(12))}return o}
+function chart(d,R,PB,color){
+const W=480,H=260,L=62,T=36,B=38,pw=W-L-14,ph=H-T-B;
+const pts=R.map(r=>[r.P,r[d[0]]]).reverse(),xt=ticks(0,R[0].P),yt=ticks(Math.min(...pts.map(p=>p[1])),Math.max(...pts.map(p=>p[1])));
+const x0=xt[0],x1=xt[xt.length-1],y0=yt[0],y1=yt[yt.length-1];
+const X=v=>L+(v-x0)/(x1-x0)*pw,Y=v=>T+ph-(v-y0)/(y1-y0)*ph;
+CH[d[0]]={pts,x0,x1,y0,y1,L,T,pw,ph,W,u:d[2]};
+let s='<svg class="ch" data-k="'+d[0]+'" viewBox="0 0 '+W+' '+H+'" role="img" aria-label="'+d[1]+' against pressure">';
+yt.forEach(v=>s+='<line class="g" x1="'+L+'" x2="'+(W-14)+'" y1="'+Y(v)+'" y2="'+Y(v)+'"/><text x="'+(L-6)+'" y="'+(Y(v)+4)+'" text-anchor="end">'+fmt(v)+'</text>');
+xt.forEach(v=>s+='<text x="'+X(v)+'" y="'+(H-20)+'" text-anchor="middle">'+fmt(v)+'</text>');
+s+='<text x="'+(L+pw/2)+'" y="'+(H-5)+'" text-anchor="middle">Pressure, psi</text><text class="t" x="'+L+'" y="16">'+d[1]+(d[2]?" ("+d[2]+")":"")+'</text>';
+if(PB<=R[0].P)s+='<line x1="'+X(PB)+'" x2="'+X(PB)+'" y1="'+T+'" y2="'+(T+ph)+'" stroke="#8a948f" stroke-dasharray="4 3"/><text x="'+(X(PB)+4)+'" y="'+(T+11)+'">Pb</text>';
+s+='<polyline fill="none" stroke="'+color+'" stroke-width="2.2" stroke-linejoin="round" points="'+pts.map(p=>X(p[0]).toFixed(1)+","+Y(p[1]).toFixed(1)).join(" ")+'"/>';
+s+='<circle r="4.5" fill="'+color+'" stroke="#fff" stroke-width="1.5"/><text class="r" x="'+(W-14)+'" y="30"></text></svg>';
+return s}
+function readout(svg,i){const c=CH[svg.dataset.k],p=c.pts[i],cs=svg.querySelector("circle");
+cs.setAttribute("cx",c.L+(p[0]-c.x0)/(c.x1-c.x0)*c.pw);cs.setAttribute("cy",c.T+c.ph-(p[1]-c.y0)/(c.y1-c.y0)*c.ph);
+svg.querySelector(".r").textContent=fmt(p[0])+" psi:  "+fmt(p[1])+" "+c.u}
+document.addEventListener("mousemove",e=>{const s=e.target.closest&&e.target.closest("svg.ch");if(!s)return;
+const c=CH[s.dataset.k],r=s.getBoundingClientRect(),v=c.x0+((e.clientX-r.left)/r.width*c.W-c.L)/c.pw*(c.x1-c.x0);
+let b=0;c.pts.forEach((p,i)=>{if(Math.abs(p[0]-v)<Math.abs(c.pts[b][0]-v))b=i});readout(s,b)});
+document.addEventListener("mouseout",e=>{const s=e.target.closest&&e.target.closest("svg.ch");if(s&&!s.contains(e.relatedTarget))readout(s,CH[s.dataset.k].pts.length-1)});
+let last=null;
+function read(){const v={};let bad=[];FLD.forEach(f=>{const el=$(f[0]);v[f[0]]=el.value===""?NaN:+el.value;
+const ok=Number.isFinite(v[f[0]])&&(f[0]=="Pres"?v[f[0]]>15:["API","Rsi","gg","Tres"].includes(f[0])?v[f[0]]>0:v[f[0]]>=0);el.classList.toggle("bad",!ok);if(!ok)bad.push(f[1])});return{v,bad}}
+function render(){const {v,bad}=read(),msg=$("msg");
+if(bad.length){msg.innerHTML="<p>Check these inputs: "+bad.join(", ")+". Pressure must be above 15 psi and gravities, temperature and Rsi above zero.</p>";return}
+const r=calc(v);last=r;
+if(!r.rows.every(x=>Object.values(x).every(Number.isFinite))||!Number.isFinite(r.PB)){msg.innerHTML="<p>These inputs fall outside the range of the correlations, so some results cannot be calculated. Check temperature and gas composition.</p>";return}
+msg.innerHTML=r.ok?"":'<p class="w">Hydrocarbon gas gravity is '+r.gh.toFixed(3)+', outside the 0.56 to 1.3 range the workbook checks. Gas results may be unreliable.</p>';
+const at=r.rows[r.PBi],top=r.rows[0];
+$("sum").innerHTML='<div class="pb"><span>Bubble point, Pb (psi)</span><b>'+fmt(r.PB)+'</b></div><div><span>Bo at Pb (bbl/STB)</span><b>'+fmt(at.Bo)+'</b></div><div><span>Oil viscosity at Pb (cP)</span><b>'+fmt(at.muo)+'</b></div><div><span>z at reservoir pressure</span><b>'+fmt(top.Z)+'</b></div><div><span>Tc*, Pc* (°R, psi)</span><b>'+fmt(r.Tcs)+', '+fmt(r.Pcs)+'</b></div>';
+$("oil").innerHTML=OIL.map(d=>chart(d,r.rows,r.PB,"var(--oil)")).join("");
+$("gas").innerHTML=GAS.map(d=>chart(d,r.rows,r.PB,"var(--gas)")).join("");
+document.querySelectorAll("svg.ch").forEach(s=>readout(s,CH[s.dataset.k].pts.length-1));
+$("tbl").innerHTML="<thead><tr>"+COL.map(c=>"<th>"+c[1]+"<small>"+(c[2]||"&nbsp;")+"</small></th>").join("")+"</tr></thead><tbody>"+
+r.rows.map((x,i)=>"<tr"+(i==r.PBi&&r.PB<=v.Pres?' class="pb"':"")+">"+COL.map(c=>"<td>"+(c[0]=="P"?x.P.toFixed(1):fmt(x[c[0]]))+"</td>").join("")+"</tr>").join("")+"</tbody>"}
+$("form").addEventListener("input",render);
+$("reset").onclick=()=>{FLD.forEach(f=>$(f[0]).value=f[3]);render()};
+$("csv").onclick=()=>{if(!last)return;const t=COL.map(c=>c[1]+(c[2]?" ("+c[2]+")":"")).join(",")+"\n"+last.rows.map(x=>COL.map(c=>x[c[0]]).join(",")).join("\n"),
+a=document.createElement("a");a.href=URL.createObjectURL(new Blob([t],{type:"text/csv"}));a.download="pvt-results.csv";a.click()};
+render();
+</script>
+</body>
+</html>
